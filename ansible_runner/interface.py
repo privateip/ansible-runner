@@ -3,6 +3,8 @@ import pkg_resources
 import threading
 import argparse
 import signal
+import tempfile
+import shutil
 import errno
 import json
 import stat
@@ -73,6 +75,52 @@ def run_async(**kwargs):
     runner_thread = threading.Thread(target=r.run)
     runner_thread.start()
     return runner_thread, r
+
+
+def api(playbook, inventory):
+    '''
+    Run an Ansible Runner task in the foreground and return a Runner object when complete.
+
+    This function will accept the playbook and inventory as native Python
+    objects and write them to temp disk.
+
+    Args:
+        playbook (list): The Ansible playbook as a list of dict objects
+
+        inventory (string): The Ansible inventory in INI-style format
+
+    Returns:
+        Runner: An object that holds details and results from the invocation of Ansible itself
+    '''
+    try:
+        private_data_dir = tempfile.mkdtemp()
+        kwargs = {'private_data_dir': private_data_dir}
+
+        inputdir = (('playbook', playbook, 'project'),
+                    ('inventory', inventory, 'inventory'))
+
+        for name, obj, fldr in inputdir:
+            path = os.path.join(private_data_dir, fldr)
+            os.makedirs(path)
+            fd, fn = tempfile.mkstemp(dir=path)
+            kwargs[name] = fn
+            with open(fn, 'w') as f:
+                if name == 'playbook':
+                    f.write(json.dumps(obj))
+                else:
+                    f.write(obj)
+
+        ###
+        # this block just stubs out the call to run() for testing purposes
+        rc = RunnerConfig(**kwargs)
+        rc.prepare()
+        r = Runner(rc)
+        return r
+        ###
+        #return run(**kwargs)
+
+    finally:
+        shutil.rmtree(private_data_dir)
 
 
 def main():
